@@ -1,0 +1,483 @@
+
+
+
+
+---------------------------------------------- 09/24/2021 6PM WHERE I LEFT OFF ----------------------
+
+WITH view_match AS 
+(
+SELECT
+'1_watched_match_ftp_window' AS event, # who was watching the game
+device_category,
+MIN(start_time) AS timestamp,
+user_id AS userid,
+FROM `fubotv-prod.dmp.viewership_activities` v
+JOIN `fubotv-dev.business_analytics.conmebol_sep_tmsid` m ON v.tms_id = m.tms_id
+JOIN `fubotv-prod.data_insights.daily_status_static_update` t1 on v.user_id = t1.account_code and t1.day = DATE(v.start_time)
+JOIN `fubotv-prod.business_analytics.NN_plancode_to_plantype_v2` p ON p.plan_code = t1.plan_code
+WHERE v.playback_type not like '%dvr%' AND v.playback_type not like '%vod%' AND v.playback_type not like '%lookback%' -- include live & startover
+AND lower(v.device_category) IN ('roku','web','iphone','fire_tv','android_tv','smart_tv', 'android_phone','android_tablet', 'ipad')
+AND (v.start_time between '2021-09-01' and '2021-09-14'
+OR TIMESTAMP_ADD(v.start_time, INTERVAL v.duration SECOND) between '2021-09-01' and '2021-09-14')
+GROUP BY 1,2,4
+)
+
+, played_ftp AS (
+SELECT distinct
+'4_played_ftp' as event, # played FTP
+properties_device_category AS device_category,
+timestamp,
+userid,
+properties_profile_id AS profile_id,
+properties_data_event_context_program_id AS tms_id,
+'' AS playback_type,
+NULL AS watch_min,
+CASE WHEN properties_data_event_context_page = 'player' THEN 'player' ELSE 'out-of-player' END AS ftp_exp_loc,
+properties_data_event_context_section AS ftp_exp_loc_section,
+properties_data_event_context_ftp_game_id AS ftp_game_id,
+properties_data_event_context_ftp_game_question_id AS ftp_question_id,
+properties_data_event_context_ftp_game_question_position AS ftp_question_pos,
+FROM `fubotv-prod.data_engineering.de_archiver_other`
+WHERE receivedat >= '2021-09-01' and receivedat < '2021-09-14'
+AND lower(properties_device_category) in ('roku','web','iphone','fire_tv','android_tv','smart_tv', 'android_phone','android_tablet', 'ipad')
+AND event IN ('ui_interaction')
+AND properties_event_sub_category IN ('ftp_game')
+AND properties_data_event_context_component = 'ftp_game_question'    ----- REMAINDER
+)
+
+,users_who_played AS
+(
+SELECT DISTINCT t1.userid,
+CASE WHEN t1.userid = t2.userid THEN 'yes' ELSE 'no' END AS played_ftp,t1.device_category, COUNT(DISTINCT ftp_question_id) as ftp_qs ,
+FROM view_match t1
+LEFT JOIN played_ftp t2 ON t1.userid = t2.userid and t1.device_category=t2.device_category
+GROUP BY 1,2,3
+)
+
+SELECT DISTINCT *
+FROM users_who_played
+
+,viewership AS
+(
+SELECT DISTINCT t1.device_category,user_id, played_ftp,COUNT(DISTINCT ftp_question_id) as ftp_qs_count, sum(t1.duration)/3600 as Hours , COUNT(DISTINCT t3.tms_id) as num_matches
+FROM `fubotv-prod.data_insights.video_in_progress_via_va_view` t1
+INNER JOIN `fubotv-dev.business_analytics.conmebol_sep_tmsid` t3 on t1.tms_id=t3.tms_id
+INNER JOIN users_who_played t2 ON t1.user_id = t2.userid 
+WHERE DATE(DATETIME(start_time,'America/New_York')) IN ('2021-09-02','2021-09-05','2021-09-09')
+AND LOWER(t1.device_category) IN ('roku','web','iphone','fire_tv','android_tv','smart_tv', 'android_phone','android_tablet', 'ipad')
+GROUP BY 1,2,3
+)
+
+,results AS (
+SELECT DISTINCT t1.*
+FROM viewership t1
+JOIN played_ftp t2 ON t1.device_category = t2.device_category 
+)
+
+SELECT COUNT (DISTINCT user_id), device_category,played_ftp
+FROM results
+GROUP BY 2,3
+
+-------------------------------------------------------------------------- LATEST -------------------------------------------------------------------------
+
+WITH view_match AS 
+(
+SELECT
+'1_watched_match_ftp_window' AS event, # who was watching the game
+device_category,
+MIN(start_time) AS timestamp,
+user_id AS userid,
+SUM(duration)/ 3600 as hours
+FROM `fubotv-prod.dmp.viewership_activities` v
+JOIN `fubotv-dev.business_analytics.conmebol_sep_tmsid` m ON v.tms_id = m.tms_id
+JOIN `fubotv-prod.data_insights.daily_status_static_update` t1 on v.user_id = t1.account_code and t1.day = DATE(v.start_time)
+JOIN `fubotv-prod.business_analytics.NN_plancode_to_plantype_v2` p ON p.plan_code = t1.plan_code
+WHERE v.playback_type not like '%dvr%' AND v.playback_type not like '%vod%' AND v.playback_type not like '%lookback%' -- include live & startover
+AND lower(v.device_category) IN ('roku','web','iphone','fire_tv','android_tv','smart_tv', 'android_phone','android_tablet', 'ipad')
+--AND user_id = '5bbbb2830b2958f145b4fd8c'
+--AND user_id = '55c17c6e66ccc40700b1e440'
+AND (v.start_time between '2021-09-01' and '2021-09-14'
+OR TIMESTAMP_ADD(v.start_time, INTERVAL v.duration SECOND) between '2021-09-01' and '2021-09-14')
+GROUP BY 1,2,4
+)
+
+, played_ftp AS (
+SELECT distinct
+'4_played_ftp' as event, # played FTP
+properties_device_category AS device_category,
+timestamp,
+userid,
+properties_profile_id AS profile_id,
+properties_data_event_context_program_id AS tms_id,
+'' AS playback_type,
+NULL AS watch_min,
+CASE WHEN properties_data_event_context_page = 'player' THEN 'player' ELSE 'out-of-player' END AS ftp_exp_loc,
+properties_data_event_context_section AS ftp_exp_loc_section,
+properties_data_event_context_ftp_game_id AS ftp_game_id,
+properties_data_event_context_ftp_game_question_id AS ftp_question_id,
+properties_data_event_context_ftp_game_question_position AS ftp_question_pos,
+FROM `fubotv-prod.data_engineering.de_archiver_other`
+WHERE receivedat >= '2021-09-01' and receivedat < '2021-09-14'
+AND lower(properties_device_category) in ('roku','web','iphone','fire_tv','android_tv','smart_tv', 'android_phone','android_tablet', 'ipad')
+AND event IN ('ui_interaction')
+AND properties_event_sub_category IN ('ftp_game')
+AND properties_data_event_context_component = 'ftp_game_question'  
+AND userid IS NOT NULL
+--AND userid = '5bbbb2830b2958f145b4fd8c'
+)
+
+,users_who_played AS
+(
+SELECT DISTINCT t1.userid, 
+CASE WHEN t1.userid = t2.userid and LOWER(t1.device_category) = LOWER(t2.device_category) THEN 'yes' ELSE 'no' END AS played_ftp,
+t1.device_category, COUNT(DISTINCT ftp_question_id) as ftp_qs_count
+FROM view_match t1
+left join played_ftp t2 ON t1.userid = t2.userid and LOWER(t1.device_category) = LOWER(t2.device_category)
+GROUP BY 1,2,3
+)
+
+,viewership AS
+(
+SELECT DISTINCT
+t1.device_category,user_id, played_ftp,ftp_qs_count, sum(t1.duration)/3600 as Hours , COUNT(DISTINCT t3.tms_id) as num_matches
+FROM `fubotv-prod.data_insights.video_in_progress_via_va_view` t1
+INNER JOIN `fubotv-dev.business_analytics.conmebol_sep_tmsid` t3 on t1.tms_id=t3.tms_id
+INNER JOIN users_who_played t2 ON t1.user_id = t2.userid and LOWER(t1.device_category) = LOWER(t2.device_category)
+WHERE DATE(DATETIME(start_time,'America/New_York')) IN ('2021-09-02','2021-09-05','2021-09-09')
+AND LOWER(t1.device_category) IN ('roku','web','iphone','fire_tv','android_tv','smart_tv', 'android_phone','android_tablet', 'ipad')
+--AND user_id = '55c17c6e66ccc40700b1e440'
+GROUP BY 1,2,3
+)
+
+SELECT *
+FROM viewership
+
+
+------------------------------- GRAB FTP USERS AND FV USERS TO GET HISTORICAL VIEWERSHIP ----------------------------
+WITH view_match AS 
+(
+SELECT
+'1_watched_match_ftp_window' AS event, # who was watching the game
+device_category,
+MIN(start_time) AS timestamp,
+user_id AS userid,
+SUM(duration)/ 3600 as hours
+FROM `fubotv-prod.dmp.viewership_activities` v
+JOIN `fubotv-dev.business_analytics.conmebol_sep_tmsid` m ON v.tms_id = m.tms_id
+JOIN `fubotv-prod.data_insights.daily_status_static_update` t1 on v.user_id = t1.account_code and t1.day = DATE(v.start_time)
+JOIN `fubotv-prod.business_analytics.NN_plancode_to_plantype_v2` p ON p.plan_code = t1.plan_code
+WHERE v.playback_type not like '%dvr%' AND v.playback_type not like '%vod%' AND v.playback_type not like '%lookback%' -- include live & startover
+AND lower(v.device_category) IN ('roku','web','iphone','fire_tv','android_tv','smart_tv', 'android_phone','android_tablet', 'ipad')
+--AND lower(v.device_category) IN ('roku','web','fire_tv','android_tv','mobile_web')
+--AND user_id = '5bbbb2830b2958f145b4fd8c'
+--AND user_id = '55c17c6e66ccc40700b1e440'
+AND (v.start_time between '2021-09-01' and '2021-09-14'
+OR TIMESTAMP_ADD(v.start_time, INTERVAL v.duration SECOND) between '2021-09-01' and '2021-09-14')
+GROUP BY 1,2,4
+)
+
+, played_ftp AS (
+SELECT distinct
+'4_played_ftp' as event, # played FTP
+properties_device_category AS device_category,
+timestamp,
+userid,
+properties_profile_id AS profile_id,
+properties_data_event_context_program_id AS tms_id,
+'' AS playback_type,
+NULL AS watch_min,
+CASE WHEN properties_data_event_context_page = 'player' THEN 'player' ELSE 'out-of-player' END AS ftp_exp_loc,
+properties_data_event_context_section AS ftp_exp_loc_section,
+properties_data_event_context_ftp_game_id AS ftp_game_id,
+properties_data_event_context_ftp_game_question_id AS ftp_question_id,
+properties_data_event_context_ftp_game_question_position AS ftp_question_pos,
+FROM `fubotv-prod.data_engineering.de_archiver_other`
+WHERE receivedat >= '2021-09-01' and receivedat < '2021-09-14'
+AND lower(properties_device_category) in ('roku','web','iphone','fire_tv','android_tv','smart_tv', 'android_phone','android_tablet', 'ipad')
+AND event IN ('ui_interaction')
+AND properties_event_sub_category IN ('ftp_game')
+AND properties_data_event_context_component = 'ftp_game_question' 
+AND userid IS NOT NULL
+)
+
+, ftp_question_dev AS
+(
+SELECT COUNT (DISTINCT ftp_question_id ), device_category
+FROM played_ftp
+GROUP BY 2
+)
+
+,users_who_played AS
+(
+SELECT DISTINCT t1.userid, 
+CASE WHEN t1.userid = t2.userid and LOWER(t1.device_category) = LOWER(t2.device_category) THEN 'yes' ELSE 'no' END AS played_ftp,
+t1.device_category, COUNT(DISTINCT ftp_question_id) as ftp_qs
+FROM view_match t1
+left join played_ftp t2 ON t1.userid = t2.userid and LOWER(t1.device_category) = LOWER(t2.device_category)
+GROUP BY 1,2,3
+)
+
+,ftp_user_list AS (
+SELECT DISTINCT userid, device_category, played_ftp, ftp_qs
+FROM users_who_played
+WHERE played_ftp = 'yes'
+)
+
+---------------------- FV USERS ---------------------------------
+, fv_users AS (
+ SELECT distinct
+'2_opened_fanview' as event, #opened Fan view
+properties_device_category AS device_category,
+a.timestamp,
+a.receivedat,
+a.userid,
+DATE_TRUNC(receivedat, hour) AS FV_clock_hours,
+FROM `fubotv-prod.data_engineering.de_archiver_other` a
+JOIN `fubotv-dev.business_analytics.conmebol_sep_tmsid` b ON SPLIT(a.properties_data_event_context_asset_id,"_")[OFFSET(0)] = b.tms_id
+WHERE receivedat >= '2021-09-01' and receivedat <= '2021-09-10'
+# AND lower(properties_device_category) IN ('roku','web','fire_tv','android_tv','mobile_web')
+# AND userid = '5fdbea2ae909140001ba225b'
+AND a.event IN ('ui_interaction')
+AND properties_event_sub_category IN ('fanview')
+AND properties_data_event_context_page = 'player'
+AND properties_data_event_context_action = 'open'
+GROUP BY 1,2,3,4,5
+)
+
+,fv_consolidated AS (
+SELECT DISTINCT userid, device_category,'yes' as watched_fv,COUNT(DISTINCT fv_users.FV_clock_hours) as total_clock_hours
+FROM fv_users ----- update 
+GROUP BY 1,2,3
+ORDER BY 1
+)
+
+, fv_user_list AS (
+SELECT DISTINCT *
+FROM fv_consolidated 
+WHERE userid IS NOT NULL
+)
+
+-------------------------------- FTP and FV -------------------------------
+
+, combined_user_list AS  (
+SELECT DISTINCT t1.userid as ftp_user, t1.device_category as ftp_device, t1.ftp_qs, t2.userid as fv_user, t2.device_category as fv_device, t2.total_clock_hours as fv_clock_hours 
+FROM ftp_user_list t1
+FULL OUTER JOIN fv_user_list t2
+ON t1.userid = t2.userid and t1.device_category = t2.device_category 
+)
+
+, final_user_list AS (
+SELECT DISTINCT t1.userid, t1.device_category
+FROM ftp_user_list t1
+UNION DISTINCT
+SELECT DISTINCT t2.userid, t2.device_category
+FROM fv_user_list  t2
+)
+
+,conmebol_viewership AS
+(
+SELECT DISTINCT t1.user_id as userid, t1.device_category
+, SUM(duration)/3600 as conmebol_hours, COUNT (DISTINCT t3.tms_id) as num_matches
+FROM `fubotv-prod.data_insights.video_in_progress_via_va_view` t1
+INNER JOIN `fubotv-dev.business_analytics.conmebol_sep_tmsid` t3 on t1.tms_id=t3.tms_id
+INNER JOIN final_user_list  t2 ON t1.user_id = t2.userid and LOWER(t1.device_category) = LOWER(t2.device_category)
+WHERE DATE(DATETIME(start_time,'America/New_York')) IN ('2021-09-02','2021-09-05','2021-09-09')
+AND LOWER(t1.device_category) IN ('roku','web','iphone','fire_tv','android_tv','smart_tv', 'android_phone','android_tablet', 'ipad')
+--AND LOWER(t1.device_category) IN ('roku','web','fire_tv','android_tv','smart_tv')
+GROUP BY 1,2 --,3,4
+)
+
+, historical_viewership AS (
+SELECT DISTINCT t1.user_id AS userid,
+CASE WHEN t1.tms_id = t4.tms_id  THEN 'Conmebol' 
+ELSE 'Others' 
+END AS soccer_viewership, 
+t1.device_category,
+SUM(duration)/3600 as hours, COUNT (DISTINCT t3.tms_id) as total_matches, COUNT(DISTINCT DATE(start_time)) AS total_days
+FROM `fubotv-prod.data_insights.video_in_progress_via_va_view` t1
+INNER JOIN final_user_list t2 ON t1.user_id = t2.userid 
+INNER JOIN `fubotv-prod.data_insights.tmsid_genre_mapping` t3 ON t1.tms_id = t3.tms_id 
+LEFT JOIN `fubotv-dev.business_analytics.Conmebol - June 2021 - TMS_id` t4 on t1.tms_id=t4.tms_id
+WHERE DATE(DATETIME(start_time,'America/New_York')) >= '2021-01-01'
+AND DATE(DATETIME(start_time,'America/New_York')) <= '2021-08-31'
+AND LOWER(primary_genre_group) LIKE '%sports%'
+AND LOWER(primary_genre) LIKE '%soccer%'
+AND t3.tms_id IS NOT NULL
+AND UPPER(t3.tms_id) NOT IN ("","00000000000000","TMS-ID-UNAVAILABLE")
+AND t1.playback_type not like '%dvr%' AND t1.playback_type not like '%vod%' AND t1.playback_type not like '%lookback%'
+--AND LOWER(t1.device_category) IN ('roku','web','iphone','fire_tv','android_tv','smart_tv', 'android_phone','android_tablet', 'ipad')
+--AND LOWER(t1.device_category) IN ('roku','web','fire_tv','android_tv','smart_tv')
+GROUP BY 1,2,3--,4
+)
+
+SELECT DISTINCT t1.userid, played_ftp,  t3.device_category as ftp_device, ftp_qs, watched_fv,t4.device_category as fv_device, total_clock_hours as fv_clock_hours, hours as historic_hours, total_matches as historic_match_count
+FROM final_user_list t1
+LEFT JOIN historical_viewership t2 ON t1.userid = t2.userid AND LOWER(t1.device_category) = LOWER(t2.device_category)
+LEFT JOIN ftp_user_list t3 ON t1.userid = t3.userid and LOWER(t1.device_category) = LOWER(t3.device_category)
+LEFT JOIN fv_user_list t4 ON t1.userid = t4.userid and LOWER(t1.device_category) = LOWER(t4.device_category)
+--GROUP BY 1,2,3,4,5,6,7
+
+
+-----
+WITH view_match AS 
+(
+SELECT
+'1_watched_match_ftp_window' AS event, # who was watching the game
+device_category,
+MIN(start_time) AS timestamp,
+user_id AS userid,
+SUM(duration)/ 3600 as hours
+FROM `fubotv-prod.dmp.viewership_activities` v
+JOIN `fubotv-dev.business_analytics.conmebol_sep_tmsid` m ON v.tms_id = m.tms_id
+JOIN `fubotv-prod.data_insights.daily_status_static_update` t1 on v.user_id = t1.account_code and t1.day = DATE(v.start_time)
+JOIN `fubotv-prod.business_analytics.NN_plancode_to_plantype_v2` p ON p.plan_code = t1.plan_code
+WHERE v.playback_type not like '%dvr%' AND v.playback_type not like '%vod%' AND v.playback_type not like '%lookback%' -- include live & startover
+AND lower(v.device_category) IN ('roku','web','iphone','fire_tv','android_tv','smart_tv', 'android_phone','android_tablet', 'ipad')
+--AND lower(v.device_category) IN ('roku','web','fire_tv','android_tv','mobile_web')
+--AND user_id = '5bbbb2830b2958f145b4fd8c'
+--AND user_id = '55c17c6e66ccc40700b1e440'
+AND (v.start_time between '2021-09-01' and '2021-09-14'
+OR TIMESTAMP_ADD(v.start_time, INTERVAL v.duration SECOND) between '2021-09-01' and '2021-09-14')
+GROUP BY 1,2,4
+)
+
+, played_ftp AS (
+SELECT distinct
+'4_played_ftp' as event, # played FTP
+properties_device_category AS device_category,
+timestamp,
+userid,
+properties_profile_id AS profile_id,
+properties_data_event_context_program_id AS tms_id,
+'' AS playback_type,
+NULL AS watch_min,
+CASE WHEN properties_data_event_context_page = 'player' THEN 'player' ELSE 'out-of-player' END AS ftp_exp_loc,
+properties_data_event_context_section AS ftp_exp_loc_section,
+properties_data_event_context_ftp_game_id AS ftp_game_id,
+properties_data_event_context_ftp_game_question_id AS ftp_question_id,
+properties_data_event_context_ftp_game_question_position AS ftp_question_pos,
+FROM `fubotv-prod.data_engineering.de_archiver_other`
+WHERE receivedat >= '2021-09-01' and receivedat < '2021-09-14'
+AND lower(properties_device_category) in ('roku','web','iphone','fire_tv','android_tv','smart_tv', 'android_phone','android_tablet', 'ipad')
+AND event IN ('ui_interaction')
+AND properties_event_sub_category IN ('ftp_game')
+AND properties_data_event_context_component = 'ftp_game_question' 
+AND userid IS NOT NULL
+)
+
+, ftp_question_dev AS
+(
+SELECT COUNT (DISTINCT ftp_question_id ), device_category
+FROM played_ftp
+GROUP BY 2
+)
+
+,users_who_played AS
+(
+SELECT DISTINCT t1.userid, 
+CASE WHEN t1.userid = t2.userid and LOWER(t1.device_category) = LOWER(t2.device_category) THEN 'yes' ELSE 'no' END AS played_ftp,
+t1.device_category, COUNT(DISTINCT ftp_question_id) as ftp_qs
+FROM view_match t1
+left join played_ftp t2 ON t1.userid = t2.userid and LOWER(t1.device_category) = LOWER(t2.device_category)
+GROUP BY 1,2,3
+)
+
+,ftp_user_list AS (
+SELECT DISTINCT userid, device_category, played_ftp, ftp_qs
+FROM users_who_played
+WHERE played_ftp = 'yes'
+)
+
+---------------------- FV USERS ---------------------------------
+, fv_users AS (
+ SELECT distinct
+'2_opened_fanview' as event, #opened Fan view
+properties_device_category AS device_category,
+a.timestamp,
+a.receivedat,
+a.userid,
+DATE_TRUNC(receivedat, hour) AS FV_clock_hours,
+FROM `fubotv-prod.data_engineering.de_archiver_other` a
+JOIN `fubotv-dev.business_analytics.conmebol_sep_tmsid` b ON SPLIT(a.properties_data_event_context_asset_id,"_")[OFFSET(0)] = b.tms_id
+WHERE receivedat >= '2021-09-01' and receivedat <= '2021-09-10'
+# AND lower(properties_device_category) IN ('roku','web','fire_tv','android_tv','mobile_web')
+# AND userid = '5fdbea2ae909140001ba225b'
+AND a.event IN ('ui_interaction')
+AND properties_event_sub_category IN ('fanview')
+AND properties_data_event_context_page = 'player'
+AND properties_data_event_context_action = 'open'
+GROUP BY 1,2,3,4,5
+)
+
+,fv_consolidated AS (
+SELECT DISTINCT userid, device_category,'yes' as watched_fv,COUNT(DISTINCT fv_users.FV_clock_hours) as total_clock_hours
+FROM fv_users ----- update 
+GROUP BY 1,2,3
+ORDER BY 1
+)
+
+, fv_user_list AS (
+SELECT DISTINCT *
+FROM fv_consolidated 
+WHERE userid IS NOT NULL
+)
+
+-------------------------------- FTP and FV -------------------------------
+
+, combined_user_list AS  (
+SELECT DISTINCT t1.userid as ftp_user, t1.device_category as ftp_device, t1.ftp_qs, t2.userid as fv_user, t2.device_category as fv_device, t2.total_clock_hours as fv_clock_hours 
+FROM ftp_user_list t1
+FULL OUTER JOIN fv_user_list t2
+ON t1.userid = t2.userid and t1.device_category = t2.device_category 
+)
+
+, final_user_list AS (
+SELECT DISTINCT t1.userid, t1.device_category
+FROM ftp_user_list t1
+UNION DISTINCT
+SELECT DISTINCT t2.userid, t2.device_category
+FROM fv_user_list  t2
+)
+
+,conmebol_viewership AS
+(
+SELECT DISTINCT t1.user_id as userid, t1.device_category
+, SUM(duration)/3600 as conmebol_hours, COUNT (DISTINCT t3.tms_id) as num_matches
+FROM `fubotv-prod.data_insights.video_in_progress_via_va_view` t1
+INNER JOIN `fubotv-dev.business_analytics.conmebol_sep_tmsid` t3 on t1.tms_id=t3.tms_id
+INNER JOIN final_user_list  t2 ON t1.user_id = t2.userid and LOWER(t1.device_category) = LOWER(t2.device_category)
+WHERE DATE(DATETIME(start_time,'America/New_York')) IN ('2021-09-02','2021-09-05','2021-09-09')
+AND LOWER(t1.device_category) IN ('roku','web','iphone','fire_tv','android_tv','smart_tv', 'android_phone','android_tablet', 'ipad')
+--AND LOWER(t1.device_category) IN ('roku','web','fire_tv','android_tv','smart_tv')
+GROUP BY 1,2 --,3,4
+)
+
+, historical_viewership AS (
+SELECT DISTINCT t1.user_id AS userid,
+CASE WHEN t1.tms_id = t4.tms_id  THEN 'Conmebol' 
+ELSE 'Others' 
+END AS soccer_viewership, 
+t1.device_category,
+SUM(duration)/3600 as hours, COUNT (DISTINCT t3.tms_id) as total_matches, COUNT(DISTINCT DATE(start_time)) AS total_days
+FROM `fubotv-prod.data_insights.video_in_progress_via_va_view` t1
+INNER JOIN final_user_list t2 ON t1.user_id = t2.userid 
+INNER JOIN `fubotv-prod.data_insights.tmsid_genre_mapping` t3 ON t1.tms_id = t3.tms_id 
+LEFT JOIN `fubotv-dev.business_analytics.Conmebol - June 2021 - TMS_id` t4 on t1.tms_id=t4.tms_id
+WHERE DATE(DATETIME(start_time,'America/New_York')) >= '2021-01-01'
+AND DATE(DATETIME(start_time,'America/New_York')) <= '2021-08-31'
+AND LOWER(primary_genre_group) LIKE '%sports%'
+AND LOWER(primary_genre) LIKE '%soccer%'
+AND t3.tms_id IS NOT NULL
+AND UPPER(t3.tms_id) NOT IN ("","00000000000000","TMS-ID-UNAVAILABLE")
+AND t1.playback_type not like '%dvr%' AND t1.playback_type not like '%vod%' AND t1.playback_type not like '%lookback%'
+--AND LOWER(t1.device_category) IN ('roku','web','iphone','fire_tv','android_tv','smart_tv', 'android_phone','android_tablet', 'ipad')
+--AND LOWER(t1.device_category) IN ('roku','web','fire_tv','android_tv','smart_tv')
+GROUP BY 1,2,3--,4
+)
+
+SELECT DISTINCT t1.userid, played_ftp,  t3.device_category as ftp_device, ftp_qs, watched_fv,t4.device_category as fv_device, total_clock_hours as fv_clock_hours, hours as historic_hours, total_matches as historic_matches
+FROM final_user_list t1
+LEFT JOIN historical_viewership t2 ON t1.userid = t2.userid AND LOWER(t1.device_category) = LOWER(t2.device_category)
+LEFT JOIN ftp_user_list t3 ON t1.userid = t3.userid and LOWER(t1.device_category) = LOWER(t3.device_category)
+LEFT JOIN fv_user_list t4 ON t1.userid = t4.userid and LOWER(t1.device_category) = LOWER(t4.device_category)
+--GROUP BY 1,2,3,4,5,6,7

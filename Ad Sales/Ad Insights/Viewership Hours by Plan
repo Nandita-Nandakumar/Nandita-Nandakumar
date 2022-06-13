@@ -1,0 +1,19 @@
+WITH users as
+(
+Select distinct t1.day, plan_code, t2.user_id
+from `fubotv-prod.data_insights.daily_status_static_update` t1
+inner join `fubotv-dev.business_analytics.account_code_mapping` t2 on t1.account_code=t2.account_code
+WHERE day >= '2021-04-01'
+and day <= '2021-06-30'
+ORDER BY 1 DESC
+)
+
+SELECT plan_code, SUM(duration)/3600 as Viewing_Hours
+from `fubotv-prod.data_insights.video_in_progress_via_va_view` t1
+inner join users t2 on t1.user_id=t2.user_id and date(t1.start_time)=t2.day
+WHERE t1.tms_id IS NOT NULL
+AND UPPER(t1.tms_id) NOT IN ("","00000000000000","TMS-ID-UNAVAILABLE")
+AND DATE(start_time , 'EST')  >= '2021-04-01'
+AND DATE(start_time, 'EST') <= '2021-06-30'
+group by 1
+order by 2 DESC 
