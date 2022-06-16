@@ -1,7 +1,8 @@
 # View Name: NN_Dashboard_FSN_Pacing_On_Off_YT_Stations_Impressions
 
-/* NN - Station Impressions + FSN Pacing Impressions + FSN YT Impressions */
+# Impressions Pull
 
+/* NN - Station Impressions + FSN Pacing Impressions + FSN YT Impressions */
 
 WITH all_excl_fsn AS 
 (
@@ -78,17 +79,16 @@ SELECT DISTINCT t2.*
 FROM fsn_only t2
 )
 
-SELECT DISTINCT t1.*, Corp, Explanation
+SELECT DISTINCT t1.*, Corp, Explanation,  CASE WHEN fast_channel = true THEN "yes" ElSE "no" END AS fast_channel_group
 FROM all_data_final t1
-JOIN `fubotv-dev.business_analytics.NN_Station_DAI_Explanation` t2 ---Explanation for DAI Eligible Stations
- ON t1.Station_Name_Mapped = t2.Station
-WHERE DATE_TRUNC(Event_Date, month) <= DATE_TRUNC(current_date-1,month)
+LEFT JOIN `fubotv-dev.business_analytics.NN_Station_DAI_Explanation` t2
+ ON t1.Station_Name_Mapped = t2.Station  ---Explanation for DAI Eligible Stations
+LEFT join `fubotv-dev.business_analytics.station_mapping_table_51220` t5 ON t5.station_name = t1.Station_Name_Mapped --- for Fast Channel STation
+WHERE DATE_TRUNC(Event_Date, month) < DATE_TRUNC(current_date,month)
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 # View Name: NN_Dashboard_FSN_Pacing_On_Off_YT_Viewership
-
-/* NN - Viewership for ALL + Including FSN On and Off Platforms + YT */
 
 /* NN - Viewership for ALL + Including FSN On and Off Platforms*/
 
@@ -117,7 +117,6 @@ WHEN playback_type = 'start_over'
  OR playback_type = 'startover' THEN 'startover'
 ELSE 'others'
 END AS playback_type,
-fast_channel, 
 LOWER(t4.ad_insertable) AS ad_insertable_network, SUM(duration)/3600 as Hours, COUNT(DISTINCT(t1.user_id)) AS Uniques, COUNT(distinct(t1.start_time)) as Streams
 from `fubotv-prod.data_insights.video_in_progress_via_va_view` t1
 inner join users t2 on t1.user_id=t2.user_id and date(t1.start_time)=t2.day
@@ -127,7 +126,7 @@ inner join `fubotv-dev.business_analytics.station_mapping_table_51220` t5 ON t5.
 WHERE t3.tms_id IS NOT NULL
 AND UPPER(t3.tms_id) NOT IN ("","00000000000000","TMS-ID-UNAVAILABLE")
 AND lower(station_mapping) NOT IN ('disney channel' , 'disney junior')
-group by 1,2,3,4,5,6
+group by 1,2,3,4,5
 order by 1 DESC
 )
 
@@ -149,7 +148,6 @@ WHEN playback_type = 'start_over'
  OR playback_type = 'startover' THEN 'startover'
 ELSE 'others'
 END AS playback_type, 
-fast_channel,
 'yes' AS ad_insertable_network, SUM(duration)/3600 as Hours, COUNT(DISTINCT(t1.user_id)) AS Uniques, COUNT(distinct(t1.start_time)) as Streams
 from `fubotv-prod.data_insights.video_in_progress_via_va_view` t1
 inner join users t2 on t1.user_id=t2.user_id and date(t1.start_time)=t2.day
@@ -160,7 +158,7 @@ WHERE t3.tms_id IS NOT NULL
 AND UPPER(t3.tms_id) NOT IN ("","00000000000000","TMS-ID-UNAVAILABLE")
 AND lower(station_mapping) IN ('disney channel' , 'disney junior')
 AND LOWER(playback_type) IN ('vod')
-group by 1,2,3,4,5,6
+group by 1,2,3,4,5
 order by 1 DESC
 )
 , viewership_for_other_dis AS
@@ -181,7 +179,6 @@ WHEN playback_type = 'start_over'
  OR playback_type = 'startover' THEN 'startover'
 ELSE 'others'
 END AS playback_type, 
-fast_channel,
 'no' AS ad_insertable_network, SUM(duration)/3600 as Hours, COUNT(DISTINCT(t1.user_id)) AS Uniques, COUNT(distinct(t1.start_time)) as Streams
 from `fubotv-prod.data_insights.video_in_progress_via_va_view` t1
 inner join users t2 on t1.user_id=t2.user_id and date(t1.start_time)=t2.day
@@ -192,7 +189,7 @@ WHERE t3.tms_id IS NOT NULL
 AND UPPER(t3.tms_id) NOT IN ("","00000000000000","TMS-ID-UNAVAILABLE")
 AND lower(station_mapping) IN ('disney channel' , 'disney junior')
 AND LOWER(playback_type) NOT IN ('vod')
-group by 1,2,3,4,5,6
+group by 1,2,3,4,5
 order by 1 DESC
 )
 
@@ -225,7 +222,6 @@ CASE WHEN LOWER(Network_Name) LIKE '%gusto%' THEN "Gusto"
      ELSE Network_Name
 END AS Network_Name, 
 playback_type,
-CASE WHEN fast_channel = true THEN "yes" ElSE "no" END AS fast_channel_group,
 ad_insertable_network, 
 SUM(Hours) AS Hours,
 Uniques,
@@ -234,7 +230,7 @@ Streams,
 FROM viewership 
 WHERE Date_range >= '2020-01-01'
 AND LOWER(Channel_N) NOT IN ('fubo sports network')
-GROUP BY 1,2,3,4,5,6,7,9,10,11
+GROUP BY 1,2,3,4,5,6,8,9,10
 )
 
 --------------------------------------- FSN DATA --------------------------------------------------
@@ -298,8 +294,7 @@ group by 1,2,3
 
 , fsn_data AS
 (
-Select airdate as Date_range, platform_partner,Channel_Name, Network_Name, playback_type, 'no' AS fast_channel_group, LOWER(ad_insertable_network) as ad_insertable_network ,
-
+Select airdate as Date_range, platform_partner,Channel_Name, Network_Name, playback_type, LOWER(ad_insertable_network) as ad_insertable_network ,
 case when airdate < '2020-05-01' and platform_partner = 'fsn' then NULL else Hours end as Hours,  
 total_uniques as Uniques,
 case when airdate < '2020-05-01' and platform_partner = 'fsn' then NULL else total_streams end as Streams,
@@ -318,7 +313,6 @@ CASE WHEN LOWER(Network_Name) = 'fubotv' THEN 'fubo'
     ELSE Network_Name
     END AS Network_Name, 
 Playback_Type AS playback_type, 
-'no' AS fast_channel_group,
 LOWER(ad_insertable_network) as ad_insertable_network ,
 Hours,
 Uniques,
@@ -338,8 +332,8 @@ SELECT DISTINCT t3.*
 FROM fsn_yt_data t3
 )
 
-SELECT DISTINCT t1.*, Corp, Explanation
+SELECT DISTINCT t1.*, Corp, Explanation, CASE WHEN fast_channel = true THEN "yes" ElSE "no" END AS fast_channel_group,
 FROM all_data_final t1
-LEFT JOIN `fubotv-dev.business_analytics.NN_Station_DAI_Explanation` t2 ---Explanation for DAI Eligible Stations
- ON t1.Channel_Name = t2.Station
+LEFT JOIN `fubotv-dev.business_analytics.NN_Station_DAI_Explanation` t2  ON t1.Channel_Name = t2.Station ---Explanation for DAI Eligible Stations
+LEFT join `fubotv-dev.business_analytics.station_mapping_table_51220` t5 ON t5.station_name = t1.Channel_Name --- for Fast Channel STation
 WHERE DATE_TRUNC(Date_range, month) < DATE_TRUNC(current_date,month)
