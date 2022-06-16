@@ -65,8 +65,8 @@ SELECT user_id, g.tms_id, sum(duration)/3600 as viewing_hours
 FROM `fubotv-prod.data_insights.video_in_progress_via_va_view` t2
 inner join active_users_exclude_coupons t1 on  t1.account_code=t2.user_id
 inner join `fubotv-prod.data_insights.tmsid_genre_mapping` g on t2.tms_id=g.tms_id
-where DATE(start_time) >= '2022-03-12'
-and lower(g.primary_genre) like ('baseball%')
+where DATE(start_time) >= '2022-03-12' --- 90 days
+and lower(g.primary_genre) like ('baseball%') 
 and lower(t2.league_names) like '%mlb%'
 group by 1,2
 ORDER BY 1,2
@@ -76,4 +76,4 @@ GROUP BY 1
 
 select DISTINCT user_id
 from viewership
-where Avg_Hours > 1
+where Avg_Hours > 1 -- 60 mins average per game
