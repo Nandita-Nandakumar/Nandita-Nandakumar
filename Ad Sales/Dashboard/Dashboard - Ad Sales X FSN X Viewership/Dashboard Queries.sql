@@ -4,7 +4,7 @@
 
 /* NN - Station Impressions + FSN Pacing Impressions + FSN YT Impressions */
 
-WITH all_excl_fsn AS 
+WITH all_excl_fsn_nbcu AS 
 (
 SELECT DISTINCT Event_Date, 
 "On Platform" AS Platform_Type, 
@@ -24,6 +24,7 @@ WHERE station_mapping IS NOT NULL
 ORDER BY 1
 )
 WHERE LOWER(Station_Name_Mapped) NOT IN ('fubo sports network')
+AND LOWER(Network_Group_Mapped) NOT IN ('nbcu')
 GROUP BY 1,2,3,4,5,6
 ORDER BY 1
 )
@@ -71,12 +72,30 @@ FROM fsn t1
 LEFT JOIN yt t2 ON t1.Event_Date = t2.Event_Date AND t2.Platform_Type = t1.Platform_Type AND t1.Platform = t2.Platform
 )
 
+,nbcu_only AS 
+(
+SELECT DISTINCT Event_Date, 
+"On Platform" AS Platform_Type, 
+"fuboTV" AS Platform, 
+station_mapping AS Station_Name_Mapped, 
+Network_Name AS Network_Group_Mapped, 
+0 AS CPM,
+(SUM(impressions)/1000) AS Revenue, 
+SUM(impressions) as Net_Counted_Ads
+FROM `fubotv-dev.business_analytics.NN_FW_Impressions_Station_PlanCode`
+WHERE LOWER(Network_Name) ='nbcu'
+GROUP BY 1,2,3,4,5,6
+)
+
 ,all_data_final AS (
 SELECT DISTINCT t1.*
-FROM all_excl_fsn t1
+FROM all_excl_fsn_nbcu t1
 UNION ALL 
 SELECT DISTINCT t2.*
 FROM fsn_only t2
+UNION ALL
+SELECT DISTINCT t3.*
+FROM nbcu_only t3
 )
 
 SELECT DISTINCT t1.*, Corp, Explanation,  CASE WHEN fast_channel = true THEN "yes" ElSE "no" END AS fast_channel_group
