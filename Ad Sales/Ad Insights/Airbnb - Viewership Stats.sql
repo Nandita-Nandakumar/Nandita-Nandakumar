@@ -142,11 +142,17 @@ user_id,
 start_time,
 SUM(Hours) AS Hours,
 FROM results 
-WHERE Date_range >= '2020-12-01'
+WHERE Date_range >= '2020-12-01' --- update the date range
+AND Date_range <= '2022-06-16' --- update the date range
 GROUP BY 1,2,3,4,5,6,7
 )
 
-SELECT DATE_TRUNC(Date_range,month) as D_Month,  ad_insertable_network, COUNT(DISTINCT user_id) as uniques, count(start_time) as streams, SUM(Hours) AS Hours
+SELECT DISTINCT
+DATE_TRUNC(Date_range,month) as Month, 
+--ad_insertable_network, --- comment this line for including all viewership
+COUNT(DISTINCT user_id) as Uniques, 
+SUM(Hours) AS Hours,
+count(start_time) as Streams, 
 FROM finals_data
-GROUP BY 1,2
-ORDER BY 1,2
+GROUP BY 1 --,2 -- Take 2 off if line 143 is commented
+ORDER BY 1
