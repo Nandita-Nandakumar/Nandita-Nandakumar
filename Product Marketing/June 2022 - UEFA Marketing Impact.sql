@@ -115,4 +115,3 @@ SELECT DISTINCT user_id, COUNT(DISTINCT t2.ftp_question_id) as questions_answere
 FROM current_subs t1
 JOIN played_ftp t2 ON t1.user_id = t2.userid
 GROUP BY 1
-
